@@ -1,0 +1,78 @@
+version: '3.8'
+
+x-airflow-common:
+  &airflow-common
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.8.1}
+  build: .
+  env_file:
+    - .env
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    # Đây là DB nội bộ của Airflow để lưu Metadata (Lịch sử chạy, user...)
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow/airflow
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./scripts:/opt/airflow/scripts
+    - ./logs:/opt/airflow/logs
+    - ./data:/opt/airflow/data
+    - ./plugins:/opt/airflow/plugins
+  user: "${AIRFLOW_UID:-50000}:0"
+
+services:
+  # Service 1: Database riêng cho Airflow vận hành (KHÔNG PHẢI dvdrental)
+  postgres_airflow:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    restart: always
+
+  # Service 2: Airflow Webserver - Giao diện quản lý
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: always
+    depends_on:
+      - postgres_airflow
+      - airflow-init
+    # QUAN TRỌNG: Cho phép container nhìn thấy localhost của máy chủ
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Service 3: Airflow Scheduler - Trái tim của hệ thống
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+    depends_on:
+      - postgres_airflow
+      - airflow-init
+    # QUAN TRỌNG: Cho phép Scheduler kết nối tới DB dvdrental bên ngoài
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Service 4: Khởi tạo DB cho Airflow lần đầu
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-admin}
+    user: "0:0"
+    depends_on:
+      - postgres_airflow
