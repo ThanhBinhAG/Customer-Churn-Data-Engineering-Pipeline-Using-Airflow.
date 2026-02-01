@@ -25,7 +25,10 @@ Pipeline này dùng Apache Airflow để:
 - **Script load**: `scripts/load_customer_churn.py`
   - Nhận DataFrame đã clean từ XCom (từ task clean).
   - Kết nối PostgreSQL (biến môi trường `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`).
-  - Tự tạo database đích nếu chưa có, sau đó load vào bảng `customer_churn` (replace mỗi lần chạy).
+  - Tự tạo database đích nếu chưa có.
+  - **Logic load theo lần chạy** (phù hợp pipeline tự động, có dữ liệu mới mỗi ngày):
+    - **Lần đầu** (bảng chưa có): tạo bảng `customer_churn` và insert toàn bộ dữ liệu.
+    - **Lần sau** (bảng đã có): gộp dữ liệu mới với dữ liệu cũ theo cột `customerid`; trùng `customerid` thì giữ bản ghi mới nhất (merge/incremental). Không bị lỗi, dữ liệu mới được thêm/cập nhật đúng.
 
 - **Docker / Airflow**:
   - `Dockerfile`: tạo image Airflow custom, cài thêm dependencies từ `requirements.txt`.
