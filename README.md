@@ -12,19 +12,20 @@ Pipeline này dùng Apache Airflow để:
 - **File DAG chính**: `dags/customer_churn_dag.py`
   - DAG id: `customer_churn_pipeline`
   - Gồm 2 task:
-    - `clean_customer_churn_data` → chạy script `scripts/clean_customer_churn.py`
-    - `load_customer_churn_to_postgres` → chạy script `scripts/load_customer_churn.py`
+    - `clean_customer_churn_data` → gọi logic trong `scripts/clean_customer_churn.py`, trả về DataFrame qua **XCom**
+    - `load_customer_churn_to_postgres` → lấy DataFrame từ XCom, gọi `scripts/load_customer_churn.py` để load thẳng lên PostgreSQL
   - Thứ tự: `clean_customer_churn_data >> load_customer_churn_to_postgres`
+  - **Không lưu file trung gian**: xử lý xong là up thẳng lên Postgres.
 
 - **Script clean**: `scripts/clean_customer_churn.py`
   - Đọc file Excel raw: `/opt/airflow/data/raw/Customer_Churn.xlsx`
-  - Chuẩn hoá cột, xử lý missing values, convert kiểu dữ liệu…
-  - Ghi ra file CSV sạch: `/opt/airflow/data/processed/customer_churn_clean.csv`
+  - Chuẩn hoá cột, xử lý missing values, convert kiểu dữ liệu (trong bộ nhớ).
+  - Trả về DataFrame đã clean (không ghi ra file CSV).
 
 - **Script load**: `scripts/load_customer_churn.py`
-  - Đọc file CSV sạch: `/opt/airflow/data/processed/customer_churn_clean.csv`
-  - Kết nối PostgreSQL (thông qua biến môi trường `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`)
-  - Load vào bảng `customer_churn` (replace toàn bộ dữ liệu mỗi lần chạy).
+  - Nhận DataFrame đã clean từ XCom (từ task clean).
+  - Kết nối PostgreSQL (biến môi trường `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`).
+  - Tự tạo database đích nếu chưa có, sau đó load vào bảng `customer_churn` (replace mỗi lần chạy).
 
 - **Docker / Airflow**:
   - `Dockerfile`: tạo image Airflow custom, cài thêm dependencies từ `requirements.txt`.
@@ -44,10 +45,9 @@ Pipeline này dùng Apache Airflow để:
   - `clean_customer_churn.py` — xử lý/clean dữ liệu.
   - `load_customer_churn.py` — load dữ liệu vào PostgreSQL.
 - **`data/`**:
-  - `raw/Customer_Churn.xlsx` — dữ liệu gốc (input).
-  - `processed/customer_churn_clean.csv` — dữ liệu đã clean (output, được tạo trong container).
+  - `raw/Customer_Churn.xlsx` — dữ liệu gốc (input). Không có file output trung gian; sau khi clean thì load thẳng lên Postgres.
 - **`logs/`**:
-  - Log runtime của Airflow (có thể xoá khi cần dọn dẹp, không ảnh hưởng code).
+  - Log runtime của Airflow (giữ lại để xem tiến trình; trong Docker log sẽ thấy dòng dạng `[CLEAN] Dang clean du lieu...`, `[LOAD] Dang load du lieu len PostgreSQL...`).
 - **`.env` / `.env.example`**:
   - Cấu hình biến môi trường, đặc biệt là thông tin kết nối DB đích để load dữ liệu.
 - **`requirements.txt`**:
@@ -133,7 +133,7 @@ docker-compose up --build
 4. Vào tab **Graph** hoặc **Grid** để xem hai task:
    - `clean_customer_churn_data`
    - `load_customer_churn_to_postgres`
-5. Nhấp vào từng task → **Logs** để xem chi tiết log (clean data, kết nối Postgres, số hàng insert,…).
+5. Nhấp vào từng task → **Logs** để xem chi tiết (trong Docker log sẽ thấy dòng dạng `[CLEAN] Dang clean du lieu...`, `[LOAD] Dang load du lieu len PostgreSQL...`).
 
 
 ### 4.4. Kiểm tra dữ liệu trong PostgreSQL
@@ -159,8 +159,8 @@ SELECT * FROM customer_churn LIMIT 10;
   - Chỉnh `TABLE_NAME` hoặc logic trong `scripts/load_customer_churn.py`.
 
 - **Dọn dẹp**:
-  - Có thể xoá nội dung thư mục `logs/` nếu chỉ cần repo sạch, vì log sẽ được sinh lại khi chạy.
   - File `__pycache__` và `.pyc` không cần thiết trong repo, có thể xoá an toàn.
+  - Thư mục `logs/` được giữ lại để xem tiến trình; nếu cần dọn repo có thể xoá nội dung bên trong, log sẽ sinh lại khi chạy.
 
 ---
 

@@ -1,20 +1,20 @@
 # ==========================================
 # File: clean_customer_churn.py
-# Purpose: Clean & preprocess Customer Churn data
-# Author: Light ✨
+# Purpose: Clean & preprocess Customer Churn data (in memory, no file output)
 # ==========================================
 
 import pandas as pd
-import os
+
+RAW_EXCEL_PATH = "/opt/airflow/data/raw/Customer_Churn.xlsx"
 
 
 def load_data(file_path: str) -> pd.DataFrame:
     """
     Load data from Excel file
     """
-    print("📥 Loading raw data from Excel...")
+    print("[CLEAN] Dang load du lieu tu Excel...")
     df = pd.read_excel(file_path)
-    print(f"✅ Raw data loaded: {df.shape[0]} rows, {df.shape[1]} columns")
+    print(f"[CLEAN] Da load xong: {df.shape[0]} dong, {df.shape[1]} cot")
     return df
 
 
@@ -22,7 +22,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Clean and preprocess Customer Churn dataset
     """
-    print("🧹 Start cleaning data...")
+    print("[CLEAN] Dang clean du lieu...")
 
     # 1. Standardize column names
     df.columns = df.columns.str.strip().str.lower()
@@ -31,14 +31,14 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     if "customerid" in df.columns:
         before = len(df)
         df = df.drop_duplicates(subset="customerid")
-        print(f"🔁 Removed {before - len(df)} duplicate customers")
+        print(f"[CLEAN] Da loai {before - len(df)} khach hang trung lap")
 
-    # 3. Handle TotalCharges (often stored as text) - Đồng bộ numeric vì phần chính là số tiền
+    # 3. Handle TotalCharges (often stored as text)
     if "totalcharges" in df.columns:
-        df["totalcharges"] = pd.to_numeric(df["totalcharges"], errors="coerce") 
+        df["totalcharges"] = pd.to_numeric(df["totalcharges"], errors="coerce")
 
-    # 4. Handle missing values 
-    print("🩹 Handling missing values...")
+    # 4. Handle missing values
+    print("[CLEAN] Dang xu ly gia tri thieu...")
 
     # Numeric columns → fill with median
     numeric_cols = df.select_dtypes(include=["int64", "float64"]).columns
@@ -66,27 +66,18 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     if "monthlycharges" in df.columns:
         df = df[df["monthlycharges"] >= 0]
 
-    print("✨ Data cleaning completed")
+    print("[CLEAN] Hoan thanh clean du lieu")
     return df
 
 
-def save_clean_data(df: pd.DataFrame, output_path: str):
+def get_cleaned_data(file_path: str = RAW_EXCEL_PATH) -> pd.DataFrame:
     """
-    Save cleaned data to CSV
+    Load Excel, clean, and return DataFrame (no file output).
+    Dùng bởi DAG: task clean trả về df này qua XCom cho task load.
     """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    df.to_csv(output_path, index=False)
-    print(f"💾 Clean data saved to {output_path}")
-
-
-def main():
-    input_file = "/opt/airflow/data/raw/Customer_Churn.xlsx"
-    output_file = "/opt/airflow/data/processed/customer_churn_clean.csv"
-
-    df_raw = load_data(input_file)
-    df_clean = clean_data(df_raw)
-    save_clean_data(df_clean, output_file)
+    df_raw = load_data(file_path)
+    return clean_data(df_raw)
 
 
 if __name__ == "__main__":
-    main()
+    get_cleaned_data()
